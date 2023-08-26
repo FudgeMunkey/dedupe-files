@@ -3,7 +3,7 @@ import os
 import hashlib
 import json
 
-START_FOLDER = "test-folder"
+START_FOLDER = "/Users/alexh/Downloads"
 HASH_FILE = "hashes.json"
 DUPLICATES_FILE = "duplicates.json"
 
@@ -17,20 +17,26 @@ def compute_md5(file_path: str):
     return hash_md5.hexdigest()
 
 if __name__ == "__main__":
-    all_paths = glob.glob(f"{START_FOLDER}/**", recursive=True)
-
     # Get all of the file paths
+    print("Getting all file paths...")
+    all_paths = glob.glob(f"{START_FOLDER}/**", recursive=True)
     file_paths = [all_path for all_path in all_paths if not os.path.isdir(all_path)]
+    print(f"There are {len(file_paths)} files")
 
     # Generate hashes for each of the files
+    print("Generating hashes for all files...")
     hashes = {}
-    for file_path in file_paths:
+    for index, file_path in enumerate(file_paths):
+        if index % 1000 == 0:
+            print(f"Generating hash for file {index}/{len(file_paths)}")
+
         hashes[file_path] = compute_md5(file_path)
 
         with open(HASH_FILE, "w") as f:
             f.write(json.dumps(hashes, indent=2))
 
     # Inverse the hashes to find the duplicates
+    print("Finding duplicates...")
     duplicates = {}
     for file_path, hash in hashes.items():
         if hash not in duplicates:
@@ -47,6 +53,7 @@ if __name__ == "__main__":
         f.write(json.dumps(duplicates, indent=2))
 
     # Calculate space wasted by duplicates
+    print("Generating statistics...")
     total_duplicated_files = 0
     total_size_duplicated = 0
     for hash, file_paths in duplicates.items():
