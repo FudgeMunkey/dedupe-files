@@ -7,6 +7,7 @@ START_FOLDER = "/Users/alexh/Downloads"
 HASH_FILE = "hashes.json"
 DUPLICATES_FILE = "duplicates.json"
 
+# Compute MD5 function copied from https://debugpointer.com/python/create-md5-hash-of-a-file-in-python
 def compute_md5(file_path: str):
     hash_md5 = hashlib.md5()
 
