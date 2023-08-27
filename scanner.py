@@ -2,10 +2,16 @@ import glob
 import os
 import hashlib
 import json
+from typing import List
+import multiprocessing
 
-START_FOLDER = "/Users/alexh/Downloads"
+# Config
+NUM_CPU_CORES = 8
+
+# START_FOLDER = "test-folder"
 HASH_FILE = "hashes.json"
 DUPLICATES_FILE = "duplicates.json"
+
 
 # Compute MD5 function copied from https://debugpointer.com/python/create-md5-hash-of-a-file-in-python
 def compute_md5(file_path: str):
@@ -17,24 +23,75 @@ def compute_md5(file_path: str):
 
     return hash_md5.hexdigest()
 
+
+def hash_file_paths(cpu_index: int, file_paths: List):
+    print(f"{cpu_index}: Generating hashes for {len(file_paths)} files...", flush=True)
+    
+    hashes = {}
+    for index, file_path in enumerate(file_paths):
+        if index % 1000 == 0:
+            print(f"{cpu_index}: Generating hash for file {index}/{len(file_paths)}")
+
+        hashes[file_path] = compute_md5(file_path)
+
+    with open(f"hashes-{cpu_index}.json", "w") as f:
+        f.write(json.dumps(hashes, indent=2))
+
+def format_size(num_bytes):
+    size_suffix = ["B", "KB", "MB", "GB", "TB", "PB"]
+
+    divisions = 0
+    shrunk_bytes = num_bytes
+    while shrunk_bytes > 0:
+        if shrunk_bytes // 1000 > 0:
+            shrunk_bytes = shrunk_bytes // 1000
+            divisions += 1
+        else:
+            break
+
+    return f"{shrunk_bytes} {size_suffix[divisions]}"
+
+
+
 if __name__ == "__main__":
+
     # Get all of the file paths
     print("Getting all file paths...")
     all_paths = glob.glob(f"{START_FOLDER}/**", recursive=True)
     file_paths = [all_path for all_path in all_paths if not os.path.isdir(all_path)]
-    print(f"There are {len(file_paths)} files")
+    print(f"There are {len(file_paths):,} files")
 
-    # Generate hashes for each of the files
-    print("Generating hashes for all files...")
-    hashes = {}
+    # Get file sizes
+    print("Splitting file paths among threads...")
+    split_file_paths = {i: [] for i in range(NUM_CPU_CORES)}
+    split_file_sizes = {i: 0 for i in range(NUM_CPU_CORES)}
     for index, file_path in enumerate(file_paths):
-        if index % 1000 == 0:
-            print(f"Generating hash for file {index}/{len(file_paths)}")
+        if index % 10_000 == 0:
+            print(f"Getting size for file {index}/{len(file_paths)}")
+        
+        size = os.path.getsize(file_path)
+        min_cpu_index = min(split_file_sizes, key=split_file_sizes.get)
 
-        hashes[file_path] = compute_md5(file_path)
+        split_file_paths[min_cpu_index].append(file_path)
+        split_file_sizes[min_cpu_index] += size
 
-        with open(HASH_FILE, "w") as f:
-            f.write(json.dumps(hashes, indent=2))
+    # Generating the md5 hashes
+    processes = []
+    for index, cpu_file_paths in split_file_paths.items():
+        process = multiprocessing.Process(target=hash_file_paths, args=(index, cpu_file_paths,))
+        processes.append(process)
+        process.start()
+    
+    for process in processes:
+        process.join()
+
+    # Combining the results from the cpus
+    hashes = {}
+    for i in range(NUM_CPU_CORES):
+        hash_dict = {}
+        with open(f"hashes-{i}.json", "r") as f:
+            hash_dict = json.loads(f.read())
+            hashes.update(hash_dict)
 
     # Inverse the hashes to find the duplicates
     print("Finding duplicates...")
@@ -62,4 +119,4 @@ if __name__ == "__main__":
         total_duplicated_files += duplicated_files
         total_size_duplicated += os.path.getsize(file_paths[0]) * duplicated_files
     
-    print(f"You have a total of {total_duplicated_files} duplicated files which is wasting {total_size_duplicated} B worth of space.")
+    print(f"You have a total of {total_duplicated_files:,} duplicated files which is wasting {format_size(total_size_duplicated)} worth of space.")
